@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}RAG Modular - Configuración de Módulos{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-puzzle-piece me-2"></i>Módulos Disponibles</h5>
+            </div>
+            <div class="list-group list-group-flush" id="module-list">
+                {% for module in modules %}
+                <a href="#" class="list-group-item list-group-item-action module-item" data-module="{{ module }}">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            {% if module == "gmail" %}
+                                <i class="fas fa-envelope text-danger me-2"></i>
+                            {% elif module == "whatsapp" %}
+                                <i class="fab fa-whatsapp text-success me-2"></i>
+                            {% elif module == "excel" %}
+                                <i class="fas fa-file-excel text-success me-2"></i>
+                            {% elif module == "vector_db" %}
+                                <i class="fas fa-database text-primary me-2"></i>
+                            {% elif module == "chatgpt" %}
+                                <i class="fas fa-robot text-info me-2"></i>
+                            {% elif module == "embedding" %}
+                                <i class="fas fa-project-diagram text-warning me-2"></i>
+                            {% else %}
+                                <i class="fas fa-cog text-secondary me-2"></i>
+                            {% endif %}
+                            {{ module|capitalize }}
+                        </div>
+                        <div>
+                            {% if module in configured_modules %}
+                                <span class="badge bg-success">Configurado</span>
+                            {% else %}
+                                <span class="badge bg-warning">Sin configurar</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Ayuda</h5>
+            </div>
+            <div class="card-body">
+                <p>Configura los módulos que deseas utilizar en tus flujos de trabajo. Cada módulo puede requerir diferentes configuraciones como claves de API o credenciales.</p>
+                <p>Haz clic en un módulo para ver y editar su configuración.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0" id="config-title"><i class="fas fa-cog me-2"></i>Configuración de Módulo</h5>
+            </div>
+            <div class="card-body">
+                <div id="welcome-message">
+                    <div class="text-center py-5">
+                        <i class="fas fa-hand-point-left fa-4x text-muted mb-3"></i>
+                        <h4>Selecciona un módulo para configurar</h4>
+                        <p class="text-muted">Haz clic en uno de los módulos del panel izquierdo para ver y editar su configuración.</p>
+                    </div>
+                </div>
+                
+                <div id="module-config" style="display: none;">
+                    <div class="mb-4">
+                        <h5 id="module-description">Descripción del módulo</h5>
+                        <div id="capabilities-container">
+                            <h6 class="mt-3">Capacidades:</h6>
+                            <ul id="module-capabilities" class="list-unstyled">
+                                <!-- Aquí se mostrarán las capacidades del módulo -->
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <form id="config-form">
+                        <input type="hidden" id="module-type" name="module_type">
+                        
+                        <div id="config-fields">
+                            <!-- Aquí se añadirán los campos de configuración dinámicamente -->
+                        </div>
+                        
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i>Guardar Configuración
+                            </button>
+                            <button type="button" class="btn btn-secondary" id="test-config">
+                                <i class="fas fa-vial me-1"></i>Probar Conexión
+                            </button>
+                            <button type="button" class="btn btn-danger" id="reset-config">
+                                <i class="fas fa-trash me-1"></i>Eliminar Configuración
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Variable para almacenar la configuración actual
+        let currentModuleConfig = {};
+        
+        // Descripciones de módulos
+        const moduleDescriptions = {
+            gmail: "Módulo para enviar y recibir correos electrónicos utilizando la API de Gmail.",
+            whatsapp: "Módulo para enviar y recibir mensajes de WhatsApp utilizando la API de WhatsApp Business.",
+            excel: "Módulo para leer, escribir y procesar archivos Excel.",
+            vector_db: "Módulo para almacenar y consultar datos en una base de datos vectorial.",
+            chatgpt: "Módulo para generar texto y responder preguntas utilizando ChatGPT de OpenAI.",
+            embedding: "Módulo para generar embeddings de texto para búsqueda semántica."
+        };
+        
+        // Manejar clic en un módulo
+        $('.module-item').click(function(e) {
+            e.preventDefault();
+            
+            // Marcar como activo
+            $('.module-item').removeClass('active');
+            $(this).addClass('active');
+            
+            // Obtener tipo de módulo
+            const moduleType = $(this).data('module');
+            
+            // Actualizar título
+            $('#config-title').html(`<i class="fas fa-cog me-2"></i>Configuración de ${moduleType.charAt(0).toUpperCase() + moduleType.slice(1)}`);
+            
+            // Mostrar sección de configuración
+            $('#welcome-message').hide();
+            $('#module-config').show();
+            
+            // Establecer tipo de módulo en el formulario
+            $('#module-type').val(moduleType);
+            
+            // Actualizar descripción
+            $('#module-description').text(moduleDescriptions[moduleType] || `Configuración del módulo ${moduleType}`);
+            
+            // Cargar configuración del módulo
+            loadModuleConfig(moduleType);
+        });
+        
+        // Función para cargar configuración de un módulo
+        function loadModuleConfig(moduleType) {
+            $.ajax({
+                url: `/api/module_config/${moduleType}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.success) {
+                        // Almacenar configuración actual
+                        currentModuleConfig = response.config || {};
+                        
+                        // Actualizar capacidades
+                        updateCapabilities(response.capabilities || []);
+                        
+                        // Generar campos de configuración
+                        generateConfigFields(response.schema || {}, currentModuleConfig);
+                    } else {
+                        showError(response.error || 'Error al cargar configuración');
+                    }
+                },
+                error: function() {
+                    showError('Error al conectar con el servidor');
+                }
+            });
+        }
+        
+        // Función para actualizar capacidades mostradas
+        function updateCapabilities(capabilities) {
+            const capabilitiesList = $('#module-capabilities');
+            capabilitiesList.empty();
+            
+            if (capabilities.length > 0) {
+                capabilities.forEach(function(capability) {
+                    capabilitiesList.append(`
+                        <li><i class="fas fa-check-circle text-success me-2"></i>${capability}</li>
+                    `);
+                });
+                $('#capabilities-container').show();
+            } else {
+                $('#capabilities-container').hide();
+            }
+        }
+        
+        // Función para generar campos de configuración
+        function generateConfigFields(schema, currentConfig) {
+            const configFields = $('#config-fields');
+            configFields.empty();
+            
+            // Campos requeridos
+            if (schema.required_fields && schema.required_fields.length > 0) {
+                configFields.append('<h6 class="mb-3">Configuración Requerida</h6>');
+                
+                schema.required_fields.forEach(function(field) {
+                    const fieldId = `config-${field}`;
+                    const fieldValue = currentConfig[field] || '';
+                    const isPassword = field.includes('key') || field.includes('secret') || field.includes('token') || field.includes('password');
+                    
+                    configFields.append(`
+                        <div class="mb-3">
+                            <label for="${fieldId}" class="form-label">${formatFieldLabel(field)}</label>
+                            <input type="${isPassword ? 'password' : 'text'}" class="form-control" id="${fieldId}" name="${field}" value="${fieldValue}" required>
+                            ${isPassword ? '<div class="form-text">Esta información se almacena de forma segura.</div>' : ''}
+                        </div>
+                    `);
+                });
+            }
+            
+            // Campos opcionales
+            if (schema.optional_fields && schema.optional_fields.length > 0) {
+                configFields.append('<h6 class="mt-4 mb-3">Configuración Opcional</h6>');
+                
+                schema.optional_fields.forEach(function(field) {
+                    const fieldId = `config-${field}`;
+                    const fieldValue = currentConfig[field] || '';
+                    
+                    configFields.append(`
+                        <div class="mb-3">
+                            <label for="${fieldId}" class="form-label">${formatFieldLabel(field)}</label>
+                            <input type="text" class="form-control" id="${fieldId}" name="${field}" value="${fieldValue}">
+                        </div>
+                    `);
+                });
+            }
+        }
+        
+        // Función para formatear etiquetas de campos
+        function formatFieldLabel(field) {
+            return field
+                .split('_')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+        
+        // Manejar envío del formulario
+        $('#config-form').submit(function(e) {
+            e.preventDefault();
+            
+            const form = $(this);
+            const moduleType = $('#module-type').val();
+            
+            // Recopilar datos del formulario
+            const formData = {};
+            form.serializeArray().forEach(function(item) {
+                if (item.name !== 'module_type') {
+                    formData[item.name] = item.value;
+                }
+            });
+            
+            // Enviar configuración
+            $.ajax({
+                url: '/configure_module',
+                method: 'POST',
+                data: {
+                    module_type: moduleType,
+                    ...formData
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Mostrar éxito
+                        showSuccess('Configuración guardada correctamente');
+                        
+                        // Actualizar estado en la lista
+                        $(`.module-item[data-module="${moduleType}"]`)
+                            .find('.badge')
+                            .removeClass('bg-warning')
+                            .addClass('bg-success')
+                            .text('Configurado');
+                            
+                        // Actualizar variable global
+                        currentModuleConfig = formData;
+                    } else {
+                        showError(response.error || 'Error al guardar configuración');
+                    }
+                },
+                error: function() {
+                    showError('Error al conectar con el servidor');
+                }
+            });
+        });
+        
+        // Manejar prueba de configuración
+        $('#test-config').click(function() {
+            const moduleType = $('#module-type').val();
+            
+            // Recopilar datos del formulario actual
+            const formData = {};
+            $('#config-form').serializeArray().forEach(function(item) {
+                if (item.name !== 'module_type') {
+                    formData[item.name] = item.value;
+                }
+            });
+            
+            // Probar configuración
+            $.ajax({
+                url: `/api/test_module/${moduleType}`,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(formData),
+                beforeSend: function() {
+                    $('#test-config').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Probando...');
+                },
+                success: function(response) {
+                    $('#test-config').prop('disabled', false).html('<i class="fas fa-vial me-1"></i>Probar Conexión');
+                    
+                    if (response.success) {
+                        showSuccess('Conexión exitosa: ' + response.message);
+                    } else {
+                        showError('Error de conexión: ' + response.error);
+                    }
+                },
+                error: function() {
+                    $('#test-config').prop('disabled', false).html('<i class="fas fa-vial me-1"></i>Probar Conexión');
+                    showError('Error al conectar con el servidor');
+                }
+            });
+        });
+        
+        // Manejar eliminación de configuración
+        $('#reset-config').click(function() {
+            if (!confirm('¿Estás seguro de que deseas eliminar esta configuración? Esta acción no se puede deshacer.')) {
+                return;
+            }
+            
+            const moduleType = $('#module-type').val();
+            
+            // Eliminar configuración
+            $.ajax({
+                url: `/api/module_config/${moduleType}`,
+                method: 'DELETE',
+                success: function(response) {
+                    if (response.success) {
+                        // Mostrar éxito
+                        showSuccess('Configuración eliminada correctamente');
+                        
+                        // Actualizar estado en la lista
+                        $(`.module-item[data-module="${moduleType}"]`)
+                            .find('.badge')
+                            .removeClass('bg-success')
+                            .addClass('bg-warning')
+                            .text('Sin configurar');
+                            
+                        // Limpiar formulario
+                        $('#config-form')[0].reset();
+                        
+                        // Actualizar variable global
+                        currentModuleConfig = {};
+                        
+                        // Recargar configuración
+                        loadModuleConfig(moduleType);
+                    } else {
+                        showError(response.error || 'Error al eliminar configuración');
+                    }
+                },
+                error: function() {
+                    showError('Error al conectar con el servidor');
+                }
+            });
+        });
+        
+        // Funciones para mostrar mensajes
+        function showSuccess(message) {
+            alert(message); // Simplificado para la demo
+        }
+        
+        function showError(message) {
+            alert('Error: ' + message); // Simplificado para la demo
+        }
+    });
+</script>
+{% endblock %}

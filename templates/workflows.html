@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}RAG Modular - Flujos de Trabajo{% endblock %}
+
+{% block head_extra %}
+<style>
+    .workflow-card {
+        transition: transform 0.2s;
+    }
+    
+    .workflow-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+    
+    .mermaid-preview {
+        height: 150px;
+        overflow: hidden;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-project-diagram me-2"></i>Mis Flujos de Trabajo</h2>
+        <a href="/" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i>Crear Nuevo Flujo
+        </a>
+    </div>
+    
+    {% if workflows %}
+        <div class="row" id="workflows-container">
+            {% for workflow in workflows %}
+                <div class="col-md-4 mb-4">
+                    <div class="card workflow-card h-100">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">{{ workflow.name }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mermaid-preview mb-3" id="diagram-{{ workflow.id }}">
+                                <!-- Aquí se mostrará la previsualización del diagrama -->
+                            </div>
+                            <p class="text-muted">{{ workflow.description }}</p>
+                        </div>
+                        <div class="card-footer d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Creado: {{ workflow.created_at|date }}</small>
+                            <div class="btn-group">
+                                <a href="/workflow/{{ workflow.id }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <button class="btn btn-sm btn-outline-success run-workflow" data-id="{{ workflow.id }}">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger delete-workflow" data-id="{{ workflow.id }}">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-project-diagram fa-4x text-muted mb-3"></i>
+            <h4>No hay flujos de trabajo guardados</h4>
+            <p class="text-muted">Puedes crear un nuevo flujo desde la página principal.</p>
+            <a href="/" class="btn btn-primary mt-2">
+                <i class="fas fa-plus me-1"></i>Crear Flujo de Trabajo
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Modal para ejecutar flujo de trabajo -->
+<div class="modal fade" id="execute-workflow-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ejecutar Flujo de Trabajo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="execution-status">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Ejecutando...</span>
+                        </div>
+                        <h5>Ejecutando flujo de trabajo...</h5>
+                    </div>
+                </div>
+                <div id="execution-result" style="display: none;">
+                    <h5>Resultado de la ejecución</h5>
+                    <div id="result-content" class="p-3 border rounded bg-light">
+                        <!-- Aquí se mostrará el resultado -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para confirmar eliminación -->
+<div class="modal fade" id="delete-workflow-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Eliminación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que deseas eliminar este flujo de trabajo? Esta acción no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete">Eliminar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Inicializar Mermaid
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    
+    $(document).ready(function() {
+        // Variable para almacenar ID del flujo a eliminar
+        let workflowToDelete = null;
+        
+        // Cargar previsualizaciones de diagramas
+        {% for workflow in workflows %}
+            // Cargar diagrama para cada flujo
+            $.ajax({
+                url: `/api/workflow_diagram/{{ workflow.id }}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.success && response.diagram) {
+                        const diagramDiv = $(`#diagram-{{ workflow.id }}`);
+                        diagramDiv.html(response.diagram);
+                        
+                        // Reinicializar Mermaid para este diagrama
+                        mermaid.init(undefined, `#diagram-{{ workflow.id }} .mermaid`);
+                    }
+                }
+            });
+        {% endfor %}
+        
+        // Manejar clic en ejecutar flujo
+        $('.run-workflow').click(function() {
+            const workflowId = $(this).data('id');
+            
+            // Mostrar modal de ejecución
+            const modal = $('#execute-workflow-modal');
+            modal.modal('show');
+            
+            // Reiniciar estado
+            $('#execution-status').show();
+            $('#execution-result').hide();
+            
+            // Ejecutar flujo
+            $.ajax({
+                url: '/execute_workflow',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    workflow_id: workflowId
+                }),
+                success: function(response) {
+                    // Mostrar resultado
+                    $('#execution-status').hide();
+                    $('#execution-result').show();
+                    
+                    if (response.success) {
+                        $('#result-content').html(`
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle me-2"></i>Ejecución completada con éxito
+                            </div>
+                            <pre>${response.summary}</pre>
+                        `);
+                    } else {
+                        $('#result-content').html(`
+                            <div class="alert alert-danger">
+                                <i class="fas fa-exclamation-circle me-2"></i>Error en la ejecución
+                            </div>
+                            <pre>${response.error || 'Error desconocido'}</pre>
+                        `);
+                    }
+                },
+                error: function() {
+                    // Mostrar error
+                    $('#execution-status').hide();
+                    $('#execution-result').show();
+                    $('#result-content').html(`
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i>Error de comunicación
+                        </div>
+                        <p>No se pudo comunicar con el servidor. Por favor, inténtalo de nuevo.</p>
+                    `);
+                }
+            });
+        });
+        
+        // Manejar clic en eliminar flujo
+        $('.delete-workflow').click(function() {
+            workflowToDelete = $(this).data('id');
+            $('#delete-workflow-modal').modal('show');
+        });
+        
+        // Confirmar eliminación
+        $('#confirm-delete').click(function() {
+            if (!workflowToDelete) return;
+            
+            // Eliminar flujo
+            $.ajax({
+                url: `/api/workflow/${workflowToDelete}`,
+                method: 'DELETE',
+                success: function(response) {
+                    if (response.success) {
+                        // Cerrar modal
+                        $('#delete-workflow-modal').modal('hide');
+                        
+                        // Eliminar tarjeta del flujo
+                        const card = $(`.delete-workflow[data-id="${workflowToDelete}"]`).closest('.col-md-4');
+                        card.fadeOut(300, function() {
+                            card.remove();
+                            
+                            // Si no quedan flujos, mostrar mensaje
+                            if ($('#workflows-container').children().length === 0) {
+                                location.reload();
+                            }
+                        });
+                    } else {
+                        alert(`Error al eliminar flujo de trabajo: ${response.error || 'Error desconocido'}`);
+                    }
+                },
+                error: function() {
+                    alert('Error de comunicación con el servidor');
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}
